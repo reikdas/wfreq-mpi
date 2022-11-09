@@ -3,13 +3,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <ctype.h>
 #include "ht.h"
 
-int hash(char* x) {
-    if (strcmp(x, "foo") == 0 || strcmp(x, "ba") == 0) return 2;
-    if (strcmp(x, "qu") == 0) return 1;
-    if (strcmp(x, "baz") == 0) return 0;
+int hash(char* x, int len) {
+    if (strncmp(x, "foo", len) == 0 || strncmp(x, "ba", len) == 0) return 2;
+    if (strncmp(x, "qu", len) == 0) return 1;
+    if (strncmp(x, "baz", len) == 0) return 0;
     printf("Hash %s - SHOULDN'T REACH HERE!!!!\n", x);
+
 }
 
 int main() {
@@ -20,30 +22,44 @@ int main() {
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
-    char m1[19] = "foo\0ba\0baz\0foo\0ba\0";
-    char m2[7] = "ba\0qu\0";
-    char m3[7] = "qu\0qu\0";
-    int total_len = 19 + 14; // Sum of lenths of m1, m2 and m3 (Denotes total file len in HDFS)
+    char m1[] = "foo ba baz foo ba";
+    int l1 = 18;
+    char m2[] = "ba qu";
+    int l2 = 6;
+    char m3[] = "qu ba";
+    int l3 = 6;
+    int total_len = (18 + 6 + 6)*2; // Sum of lenths of m1, m2 and m3 (Denotes total file len in HDFS)
 
     char* buf = malloc(sizeof(char) * total_len * world_size); // Each row r is the data being sent to reducer r
     int* chars_per_reducer = (int*)calloc(world_size, sizeof(int)); // Storing number of chars to be sent to reducer idx
 
     char* fpointer; // Pointer to array processed by this proc
-    int l_of_l; // Number of strings in array
+    int l;
 
-    if (world_rank == 0) fpointer = m1, l_of_l = 5;
-    else if (world_rank == 1) fpointer = m2, l_of_l = 2;
-    else if (world_rank == 2) fpointer = m3, l_of_l = 2;
+    if (world_rank == 0) fpointer = m1, l = l1;
+    else if (world_rank == 1) fpointer = m2, l = l2;
+    else if (world_rank == 2) fpointer = m3, l = l3;
     else printf("Rank %d - SHOULDN'T REACH HERE!!!!\n", world_rank);
 
-    int spointer = 0;
-    for (int i = 0; i < l_of_l; i++) {
-        int which_reducer = hash(&fpointer[spointer]);
-        int len = strlen(&fpointer[spointer]);
-        memcpy(&buf[which_reducer * total_len] + chars_per_reducer[which_reducer], fpointer + spointer, len + 1);
-        spointer += len + 1;
-        chars_per_reducer[which_reducer] += len + 1;
+    int start = 0;
+    while (start < l - 1) {
+        while (isspace(fpointer[start]) && start < l - 1) start = start + 1;
+        int end = start + 1;
+        while (!isspace(fpointer[end]) && (end < l)) end = end + 1;
+        int len = end - start;
+        int which_reducer = hash(&fpointer[start], len);
+        memcpy(&buf[which_reducer * total_len] + chars_per_reducer[which_reducer], fpointer + start, len);
+        buf[which_reducer * total_len + chars_per_reducer[which_reducer] + len + 1] = '\0';
+        if (end == l) {
+            chars_per_reducer[which_reducer] += len;
+        } else {
+            chars_per_reducer[which_reducer] += len + 1;
+        }
+        start = end;
     }
+    // for (int i=0; i<world_size; i++)
+    //     printf("%d ", chars_per_reducer[i]);
+    // printf("\n");
 
     int* M = (int*)malloc(sizeof(int) * world_size * world_size);
     MPI_Allgather(chars_per_reducer, world_size, MPI_INT, M, world_size, MPI_INT, MPI_COMM_WORLD);
@@ -77,8 +93,12 @@ int main() {
         //     }
         // }
 
-        if (world_rank == i) {
+        if (world_rank == i && world_rank == 0) {
+            // for (int k=0; k<num_elem_for_red; k++) {
+            //     printf("%d = %c\n", k, tmp[k]);
+            // }
             ht* counts = ht_create();
+            int spointer = 0;
             spointer = 0;
             while (spointer < num_elem_for_red) {
                 int len = strlen(&tmp[spointer]);
