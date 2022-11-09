@@ -20,33 +20,28 @@ int main() {
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
     char m1[19] = "foo\0ba\0baz\0foo\0ba\0";
-    int l1[5] = { 3, 2, 3, 3, 2 };
     char m2[7] = "ba\0qu\0";
-    int l2[2] = { 2, 2 };
     char m3[7] = "qu\0qu\0";
-    int l3[2] = { 2, 2 };
-    int total_len = 19 + 14; // Sum of lenths of m1, m2 and m3
+    int total_len = 19 + 14; // Sum of lenths of m1, m2 and m3 (Denotes total file len in HDFS)
 
     char* buf = malloc(sizeof(char) * total_len * world_size); // Each row r is the data being sent to reducer r
-    int starter_for_each = total_len;
     int* chars_per_reducer = (int*)calloc(world_size, sizeof(int)); // Storing number of chars to be sent to reducer idx
 
     char* fpointer; // Pointer to array processed by this proc
-    int* l_of_str; // Pointer to len of strings in array processed by this proc
-    int l_of_l; // Length of l_of_str
+    int l_of_l; // Number of strings in array
 
-    if (world_rank == 0) fpointer = m1, l_of_str = l1, l_of_l = 5;
-    else if (world_rank == 1) fpointer = m2, l_of_str = l2, l_of_l = 2;
-    else if (world_rank == 2) fpointer = m3, l_of_str = l3, l_of_l = 2;
+    if (world_rank == 0) fpointer = m1, l_of_l = 5;
+    else if (world_rank == 1) fpointer = m2, l_of_l = 2;
+    else if (world_rank == 2) fpointer = m3, l_of_l = 2;
     else printf("Rank %d - SHOULDN'T REACH HERE!!!!\n", world_rank);
 
     int spointer = 0;
     for (int i = 0; i < l_of_l; i++) {
-        
         int which_reducer = hash(&fpointer[spointer]);
-        memcpy(&buf[which_reducer * total_len] + chars_per_reducer[which_reducer], fpointer + spointer, l_of_str[i] + 1);
-        spointer += l_of_str[i] + 1;
-        chars_per_reducer[which_reducer] += l_of_str[i] + 1;
+        int len = strlen(&fpointer[spointer]);
+        memcpy(&buf[which_reducer * total_len] + chars_per_reducer[which_reducer], fpointer + spointer, len + 1);
+        spointer += len + 1;
+        chars_per_reducer[which_reducer] += len + 1;
     }
 
     int* M = (int*)malloc(sizeof(int) * world_size * world_size);
@@ -75,11 +70,11 @@ int main() {
         }
         MPI_Gatherv(&buf[i * total_len], M[world_size * world_rank + i], MPI_CHAR, tmp, recvcounts, displs, MPI_CHAR, i, MPI_COMM_WORLD);
 
-        if (world_rank == 2 && i == 2) {
-            for (int j=0; j<num_elem_for_red; j++) {
-                printf("%d = %c\n", j, tmp[j]);
-            }
-        }
+        // if (world_rank == 2 && i == 2) {
+        //     for (int j=0; j<num_elem_for_red; j++) {
+        //         printf("%d = %c\n", j, tmp[j]);
+        //     }
+        // }
     }
 
     free(buf);
