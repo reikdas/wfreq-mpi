@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include "ht.h"
 
 int hash(char* x) {
     if (strcmp(x, "foo") == 0 || strcmp(x, "ba") == 0) return 2;
@@ -75,8 +76,33 @@ int main() {
         //         printf("%d = %c\n", j, tmp[j]);
         //     }
         // }
+
+        if (world_rank == i) {
+            ht* counts = ht_create();
+            spointer = 0;
+            while (spointer < num_elem_for_red) {
+                int len = strlen(&tmp[spointer]);
+                int value = ht_get(counts, &tmp[spointer]);
+                if (value == -1) {
+                    value = 1;
+                }
+                else {
+                    value += 1;
+                }
+                ht_set(counts, &tmp[spointer], value);
+                spointer += len + 1;
+            }
+            hti it = ht_iterator(counts);
+            while (ht_next(&it)) {
+                printf("%s %d\n", it.key, it.value);
+            }
+        }
+        free(recvcounts);
+        free(displs);
     }
 
+    free(recv_buf);
+    free(M);
     free(buf);
     free(chars_per_reducer);
     MPI_Finalize();
